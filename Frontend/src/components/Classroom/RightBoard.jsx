@@ -1,86 +1,90 @@
-// components/RightBoard.jsx
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Html } from '@react-three/drei';
-import { useControls } from 'leva';
-
-const dummyChats = [
-  "Hello! 👋",
-  "Welcome to the virtual classroom.",
-  "Let's begin our session.",
-  "Feel free to ask any questions.",
-  "Scroll is working perfectly!",
-  "Lorem ipsum dolor sit amet.",
-  "This is a dummy chat message.",
-  "Another message here...",
-  "Yet another message...",
-  "Keep scrolling!",
-  "You reached the bottom 🎉",
-];
 
 const RightBoard = () => {
-  // Leva controls for position, rotation, and scale
-  const {
-    posX, posY, posZ,
-    rotX, rotY, rotZ,
-    scaleX, scaleY,
-  } = useControls('RightBoard', {
-    posX: { value: 11.6, min: -5, max: 20, step: 0.1 },
-    posY: { value: 10.3, min: 0, max: 20, step: 0.1 },
-    posZ: { value: -17.2, min: -50, max: 5, step: 0.1 },
-    rotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
-    rotY: { value: 0 , min: -Math.PI, max: Math.PI, step: 0.01 },
-    rotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
-    scaleX: { value: 1, min: 0.5, max: 3, step: 0.1 },
-    scaleY: { value: 2.3, min: 0.5, max: 3, step: 0.1 },
-  });
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const chatContainerRef = useRef(null);
+  const username = "You";
+
+  // Auto scroll to bottom whenever messages change
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: "smooth"
+      });
+    }
+  }, [messages]);
+
+  const handleSend = () => {
+    if (!newMessage.trim()) return;
+    setMessages(prev => [...prev, { username, message: newMessage.trim() }]);
+    setNewMessage("");
+  };
+
+  // Fixed board position & scale
+  const posX = 11.7;
+  const posY = 8.2;
+  const posZ = -18.1;
+  const scaleX = 1.0;
+  const scaleY = 2.3;
 
   const baseWidth = 2.2;
   const baseHeight = 1.4;
-
   const scaledWidth = baseWidth * scaleX;
   const scaledHeight = baseHeight * scaleY;
+  const htmlOffsetY = scaledHeight / 2 + 0.5;
 
   return (
-    <group position={[posX, posY, posZ]} rotation={[rotX, rotY, rotZ]}>
+    <group position={[posX, posY, posZ]} rotation={[0, 0, 0]}>
       <Html
-        position={[0, 0, 0.01]} // Slightly in front of where the board would be
+        position={[0, htmlOffsetY, 0]}
         transform
-        occlude
-        style={{
-          pointerEvents: 'auto',
-          width: `${scaledWidth * 100}px`,
-          height: `${scaledHeight * 100}px`,
-        }}
+        scaleFactor={1}
+        sprite={false}
+        style={{ pointerEvents: 'auto', width: `${scaledWidth * 100}px`, height: `${scaledHeight * 100}px` }}
       >
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            overflowY: 'auto',
-            background: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '10px',
-            padding: '12px',
-            boxSizing: 'border-box',
-            color: '#fff',
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          {dummyChats.map((msg, i) => (
-            <div
-              key={i}
-              style={{
-                padding: '6px 8px',
-                background: '#333',
-                borderRadius: '6px',
-              }}
+        <div className="w-full h-full bg-gray-900/90 rounded-xl flex flex-col p-2 font-sans">
+          {/* Messages */}
+          <div
+            ref={chatContainerRef}
+            className="flex flex-col gap-2 flex-1 overflow-y-auto scrollbar-hide mb-2"
+          >
+            {messages.length === 0 ? (
+              <div className="text-gray-400 italic text-center py-5">
+                Start the conversation!
+              </div>
+            ) : (
+              messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className="px-3 py-2 bg-gray-800 rounded-lg text-white text-sm shadow-sm break-words"
+                >
+                  <strong className="text-blue-500 mr-1">{msg.username}:</strong>
+                  {msg.message}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="flex gap-0 flex-shrink-0 w-full">
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Type a message..."
+              className="flex-1 px-3 py-2 rounded-l-lg w-[75%] bg-gray-800 text-white text-sm focus:outline-none"
+            />
+            <button
+              onClick={handleSend}
+              className="px-1 py-2 rounded-r-lg w-[25%] bg-blue-500 text-white text-sm cursor-pointer"
             >
-              {msg}
-            </div>
-          ))}
+              Send
+            </button>
+          </div>
         </div>
       </Html>
     </group>
