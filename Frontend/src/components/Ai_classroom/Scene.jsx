@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, Gltf, Loader, CameraControls, useGLTF, useAnimations } from "@react-three/drei";
 import { useControls, button } from "leva";
@@ -52,7 +52,6 @@ function RahulSir() {
   const { scene, animations } = useGLTF("/models/rahulsir.glb");
   const { actions } = useAnimations(animations, scene);
 
-  // 🎬 Play first animation automatically
   useEffect(() => {
     if (actions && Object.keys(actions).length > 0) {
       const firstAction = actions[Object.keys(actions)[0]];
@@ -60,7 +59,6 @@ function RahulSir() {
     }
   }, [actions]);
 
-  // 🎛 Leva controls for position & scale
   const { position, scale } = useControls("Rahul Sir", {
     position: { value: [-2, -1.7, -5], step: 0.1 },
     scale: { value: 1.3, min: 0.5, max: 3, step: 0.1 },
@@ -71,13 +69,20 @@ function RahulSir() {
 
 // ---------------- Main Scene ---------------- //
 export default function Scene() {
+  const [input, setInput] = useState("");
+
+  const handleAsk = () => {
+    console.log("User Question:", input);
+    setInput(""); // clear after asking
+  };
+
   return (
-    <div className="h-screen w-screen">
+    <div className="h-screen w-screen relative">
       <Loader />
       <Canvas
         camera={{
           position: [0, 1, 5],
-          fov: 40,
+          fov: 50,
           near: 0.1,
           far: 1000,
         }}
@@ -90,19 +95,54 @@ export default function Scene() {
 
         {/* Models */}
         <Suspense fallback={null}>
-          {/* Classroom */}
           <Gltf
             src="/models/Ai_classroom.glb"
             position={[0, -1.7, -2]}
             scale={1}
           />
 
-          {/* Rahul Sir */}
           <RahulSir />
 
           <Environment preset="sunset" />
         </Suspense>
       </Canvas>
+
+            {/* Chat Panel (Glass Card Style) */}
+      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 
+                      w-[90%] max-w-2xl">
+        <div className="bg-white/20 backdrop-blur-xl border border-white/30 
+                        rounded-2xl shadow-lg p-6 space-y-4">
+          
+          {/* Title & Subtitle */}
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              How to ask Rahul Sir?
+            </h2>
+            <p className="text-sm text-gray-200">
+              Type your Python question and Rahul Sir will explain it to you.
+            </p>
+          </div>
+
+          {/* Input + Button */}
+          <div className="flex items-center bg-[#514850] rounded-full px-3 py-2">
+            <input
+              type="text"
+              placeholder="Write your question here..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="flex-1 bg-transparent text-white placeholder-gray-300 
+                         focus:outline-none focus:ring-0 px-2 text-base"
+            />
+            <button
+              onClick={handleAsk}
+              className="ml-2 px-5 py-2 rounded-full bg-white/30 
+                         hover:bg-white/40 text-white font-medium transition-all"
+            >
+              Ask
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
