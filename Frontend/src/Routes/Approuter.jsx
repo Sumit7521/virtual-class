@@ -1,19 +1,27 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Game from "./pages/Game";
-import AIClassroom from "./pages/AIClassroom";
-import VirtualClassroom from "./pages/VirtualClassroom";
+import VirtualClassroom from "../Pages/Virtualclassroom";
 import Home from "../Pages/Home";
 import Aiclassroom from "../Pages/Aiclassroom";
 import Virtualclassroom from "../Pages/Virtualclassroom";
+import About from "../Pages/About";
+import Contact from "../Pages/Contact";
+import Dashboard from "../Pages/Dashboard";
+import Admin from "../Pages/Admin";
 
-export default function App() {
+export default function Approuter() {
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/ai-classroom" element={<Aiclassroom />} />
-        <Route path="/virtual-classroom" element={<Virtualclassroom />} />
-      </Routes>
+      <div className="h-screen w-screen">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/virtual-classroom" element={<Virtualclassroom />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/ai-classroom" element={<Aiclassroom />} />
+          <Route path="/admin" element={<Admin />} />
+        </Routes>
+      </div>
     </Router>
   );
 }

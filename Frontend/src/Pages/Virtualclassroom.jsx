@@ -1,4 +1,4 @@
-import Scene from '../components/Classroom/Scene';
+import Scene from '../components/Virtual_Classroom/Scene';
 
 const Virtualclassroom = () => {
   return (

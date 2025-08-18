@@ -1,8 +1,11 @@
 import React from 'react'
+import Scene from '../components/Ai_classroom/Scene'
 
 const Aiclassroom = () => {
   return (
-    <div>Aiclassroom</div>
+    <div>
+      <Scene />
+    </div>
   )
 }
 
