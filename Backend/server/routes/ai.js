@@ -8,6 +8,16 @@ dotenv.config();
 const router = express.Router();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// --- Utilities ---
+function toBase64(arrayBuffer) {
+  return Buffer.from(arrayBuffer).toString('base64');
+}
+
+function trimToLength(str, max = 200) {
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max) : str;
+}
+
 const getRahulPrompt = (question) => `
 You are Rahul Mahatao, Python instructor at Techno India University and TCS professional.
 You are knowledgeable, funny, and sometimes sprinkle Bhojpuri or Maithili phrases for humor.
@@ -30,8 +40,9 @@ Return JSON only:
 NOW ANSWER THIS QUESTION: "${question}"
 `;
 
+// Gemini call with fallback
 async function generateWithFallback(prompt) {
-  const models = ["gemini-1.5-pro", "gemini-1.5-flash"]; // fallback list
+  const models = ['gemini-1.5-pro', 'gemini-1.5-flash']; // fallback list
   let lastError = null;
 
   for (const modelName of models) {
@@ -41,11 +52,11 @@ async function generateWithFallback(prompt) {
       return result.response.text();
     } catch (err) {
       lastError = err;
-      if (err.status === 429) {
+      if (err?.status === 429) {
         console.warn(`Quota exceeded for ${modelName}, trying fallback...`);
-        continue; // try next model
+        continue;
       } else {
-        throw err; // some other error, stop
+        throw err;
       }
     }
   }
@@ -53,13 +64,72 @@ async function generateWithFallback(prompt) {
   throw lastError;
 }
 
-router.post('/ask', async (req, res) => {
-  const { question } = req.body;
-  if (!question) return res.status(400).json({ error: "Question is required" });
+// ---- ElevenLabs TTS (fixed) ----
+async function ttsElevenLabs(text) {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+  if (!apiKey || !voiceId) {
+    console.warn('TTS disabled: ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID missing.');
+    return null;
+  }
+
+  // You can override these with env vars if you like
+  const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+  const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128';
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`;
+
+  // Optional: cancel if it takes too long
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000); // 20s
 
   try {
-    // ---------------- Gemini AI Response ----------------
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg' // ensures we get MP3 bytes back
+      },
+      body: JSON.stringify({
+        text,
+        model_id: modelId,
+        // Optional fine-tuning; safe defaults:
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.7
+        }
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error('TTS API error:', resp.status, errText);
+      return null;
+    }
+
+    const arrayBuffer = await resp.arrayBuffer();
+    return toBase64(arrayBuffer);
+  } catch (e) {
+    clearTimeout(timeout);
+    console.error('TTS generation failed:', e);
+    return null;
+  }
+}
+
+// ---- Route ----
+router.post('/ask', async (req, res) => {
+  const { question } = req.body || {};
+  if (!question) return res.status(400).json({ error: 'Question is required' });
+
+  try {
+    // 1) Get Gemini response
     const rawText = await generateWithFallback(getRahulPrompt(question));
+
+    // Strip accidental fenced JSON
     const cleanText = rawText.replace(/```json|```/g, '').trim();
 
     let aiResponse;
@@ -67,70 +137,42 @@ router.post('/ask', async (req, res) => {
       aiResponse = JSON.parse(cleanText);
     } catch {
       aiResponse = {
-        query_response: cleanText.substring(0, 200) || "I'm here to help with Python programming!",
+        query_response: trimToLength(cleanText) || "I'm here to help with Python programming!",
         follow_up_questions: [
-          "What Python topic would you like to learn?",
-          "Need help with any Python programming challenge?",
-          "Want to know about Python applications in industry?"
+          'What Python topic would you like to learn?',
+          'Need help with any Python programming challenge?',
+          'Want to know about Python applications in industry?'
         ]
       };
     }
 
-    if (!aiResponse.query_response)
+    if (!aiResponse.query_response) {
       aiResponse.query_response = "I'm here to help with Python programming. What would you like to learn?";
+    }
 
     if (!Array.isArray(aiResponse.follow_up_questions) || aiResponse.follow_up_questions.length !== 3) {
       aiResponse.follow_up_questions = [
-        "What Python concept interests you most?",
-        "Do you need help with any Python project?",
-        "Want to explore Python libraries and frameworks?"
+        'What Python concept interests you most?',
+        'Do you need help with any Python project?',
+        'Want to explore Python libraries and frameworks?'
       ];
     }
 
-    // ---------------- ElevenLabs TTS ----------------
-    const elevenApiKey = process.env.ELEVENLABS_API_KEY;
-    const voiceId = process.env.ELEVENLABS_VOICE_ID;
-    const ttsUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+    // 2) ElevenLabs TTS (returns base64 or null)
+    const audioBase64 = await ttsElevenLabs(aiResponse.query_response);
 
-    let audioBase64 = null;
-    try {
-      if (voiceId && elevenApiKey) {
-        const ttsResp = await fetch(ttsUrl, {
-          method: 'POST',
-          headers: {
-            "xi-api-key": elevenApiKey,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            text: aiResponse.query_response,
-            format: "mp3"
-          })
-        });
-
-        if (ttsResp.ok) {
-          const arrayBuffer = await ttsResp.arrayBuffer();
-          audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-        } else {
-          console.error("TTS API error:", await ttsResp.text());
-        }
-      }
-    } catch (ttsError) {
-      console.error("TTS generation failed:", ttsError);
-    }
-
-    // ---------------- Send Response ----------------
+    // 3) Send response
     res.json({ ...aiResponse, audio: audioBase64 });
-
   } catch (error) {
-    console.error("Error generating content:", error);
+    console.error('Error generating content:', error);
     res.status(500).json({
-      error: "Failed to generate AI response",
+      error: 'Failed to generate AI response',
       fallback: {
-        query_response: "Arre dost, lagta hai quota khatam ho gaya! Thoda break le lo, fir try karo 😅",
+        query_response: 'Arre dost, lagta hai quota khatam ho gaya! Thoda break le lo, fir try karo 😅',
         follow_up_questions: [
-          "Want me to explain Python lists?",
-          "Shall I compare tuple vs dictionary?",
-          "Need real-world coding examples?"
+          'Want me to explain Python lists?',
+          'Shall I compare tuple vs dictionary?',
+          'Need real-world coding examples?'
         ],
         audio: null
       }
