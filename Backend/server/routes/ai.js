@@ -18,53 +18,44 @@ function trimToLength(str, max = 200) {
   return str.length > max ? str.slice(0, max) : str;
 }
 
+// --- Rahul Prompt ---
 const getRahulPrompt = (question) => `
 You are Rahul Mahatao, Python instructor at Techno India University and TCS professional.
-You are knowledgeable, funny, and sometimes sprinkle Bhojpuri or Maithili phrases for humor.
+You are knowledgeable, funny, and sometimes sprinkle Bhojpuri or Hinglish phrases for humor.
 
 RULES:
-1. Only introduce yourself if the user asks about your identity.
-2. Detect the language of the question (English, Hindi, Hinglish, Bengali, Bhojpuri, Maithili) and respond primarily in that language.
-3. For Python technical answers, mix English + Hindi/Hinglish for clarity.
-4. For motivational/support questions, sprinkle funny, Bhojpuri or Maithili phrases.
+1. Detect the language of the question (English, Hindi, Hinglish, Bengali, Bhojpuri, Maithili, etc.).
+2. Reply in the **same language as the question**, but always using English letters:
+   - Hindi/Bhojpuri → Hinglish
+   - Bengali → transliterated in English letters
+   - English → normal English
+3. For Python technical answers, mix English + Hinglish (if question is in Hindi/Bhojpuri) for clarity.
+4. For motivational/support questions, sprinkle funny Hinglish phrases.
 5. Be witty and slightly humorous when explaining Python concepts; use relatable examples.
-6. Do NOT switch unnecessarily to plain English; maintain user's language + style.
-7. Always answer the SPECIFIC question asked in 2-3 sentences max.
+6. Always answer the SPECIFIC question asked in 2-3 sentences max.
 
 Return JSON only:
 {
-  "query_response": "answer with humor",
+  "query_response": "answer in same language as question, using English letters",
   "follow_up_questions": ["q1","q2","q3"]
 }
 
 NOW ANSWER THIS QUESTION: "${question}"
 `;
 
-// Gemini call with fallback
-async function generateWithFallback(prompt) {
-  const models = ['gemini-1.5-pro', 'gemini-1.5-flash']; // fallback list
-  let lastError = null;
-
-  for (const modelName of models) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      lastError = err;
-      if (err?.status === 429) {
-        console.warn(`Quota exceeded for ${modelName}, trying fallback...`);
-        continue;
-      } else {
-        throw err;
-      }
-    }
+// --- Gemini 2.5 Pro call ---
+async function generateGemini25Pro(prompt) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (err) {
+    console.error("Gemini 2.5 Pro error:", err);
+    return "Arre dost, Gemini 2.5 Pro busy hai ya quota khatam ho gaya 😅";
   }
-
-  throw lastError;
 }
 
-// ---- ElevenLabs TTS (fixed) ----
+// --- ElevenLabs TTS ---
 async function ttsElevenLabs(text) {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   const voiceId = process.env.ELEVENLABS_VOICE_ID;
@@ -73,15 +64,12 @@ async function ttsElevenLabs(text) {
     return null;
   }
 
-  // You can override these with env vars if you like
   const modelId = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128';
-
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`;
 
-  // Optional: cancel if it takes too long
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000); // 20s
+  const timeout = setTimeout(() => controller.abort(), 20000);
 
   try {
     const resp = await fetch(url, {
@@ -89,16 +77,12 @@ async function ttsElevenLabs(text) {
       headers: {
         'xi-api-key': apiKey,
         'Content-Type': 'application/json',
-        'Accept': 'audio/mpeg' // ensures we get MP3 bytes back
+        'Accept': 'audio/mpeg'
       },
       body: JSON.stringify({
         text,
         model_id: modelId,
-        // Optional fine-tuning; safe defaults:
-        voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.7
-        }
+        voice_settings: { stability: 0.4, similarity_boost: 0.7 }
       }),
       signal: controller.signal
     });
@@ -120,16 +104,14 @@ async function ttsElevenLabs(text) {
   }
 }
 
-// ---- Route ----
+// --- Route ---
 router.post('/ask', async (req, res) => {
   const { question } = req.body || {};
   if (!question) return res.status(400).json({ error: 'Question is required' });
 
   try {
-    // 1) Get Gemini response
-    const rawText = await generateWithFallback(getRahulPrompt(question));
-
-    // Strip accidental fenced JSON
+    // 1) Gemini 2.5 Pro response
+    const rawText = await generateGemini25Pro(getRahulPrompt(question));
     const cleanText = rawText.replace(/```json|```/g, '').trim();
 
     let aiResponse;
@@ -158,7 +140,7 @@ router.post('/ask', async (req, res) => {
       ];
     }
 
-    // 2) ElevenLabs TTS (returns base64 or null)
+    // 2) ElevenLabs TTS
     const audioBase64 = await ttsElevenLabs(aiResponse.query_response);
 
     // 3) Send response
