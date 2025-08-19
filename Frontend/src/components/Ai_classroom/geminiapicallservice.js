@@ -1,4 +1,4 @@
-const API_URL = "https://immersio-n347.vercel.app/api/ask"; // Backend endpoint
+const API_URL = "https://immersio.onrender.com/api/ask"; // Backend endpoint
 
 /**
  * Sends a question to the backend AI server and returns the full response.
