@@ -38,11 +38,9 @@ function RahulSir({ isThinking, aiAnswered }) {
   useEffect(() => {
     if (!actions || Object.keys(actions).length === 0) return;
 
-    // Console all animations
     console.log("Rahul Sir animations:");
     Object.keys(actions).forEach((key, idx) => console.log(idx, key));
 
-    // Play enter animation once
     if (!enterAnimationPlayed) {
       const enterAction = actions[Object.keys(actions)[6]]; // waving
       enterAction.reset().setLoop(THREE.LoopOnce).play();
@@ -58,11 +56,10 @@ function RahulSir({ isThinking, aiAnswered }) {
     }
   }, [actions, enterAnimationPlayed]);
 
-  // Handle thinking animation
   useEffect(() => {
     if (!actions || !currentAction) return;
     if (isThinking) {
-      const thinkAction = actions[Object.keys(actions)[4]]; // idle2 / waiting
+      const thinkAction = actions[Object.keys(actions)[4]]; // idle2
       if (currentAction !== thinkAction) {
         currentAction.fadeOut(0.2);
         thinkAction.reset().fadeIn(0.2).play();
@@ -71,7 +68,6 @@ function RahulSir({ isThinking, aiAnswered }) {
     }
   }, [isThinking, actions, currentAction]);
 
-  // Handle answer animation once after AI responds
   useEffect(() => {
     if (!actions || !currentAction || !aiAnswered) return;
 
@@ -147,23 +143,17 @@ function BlackboardPlaceholder({ text }) {
 // ---------------- Backend AI Call ---------------- //
 async function askRahulBackend(question) {
   try {
-    const res = await fetch("https://immersio-1.onrender.com/api/ask", {
+    const res = await fetch("https://immersio-n347.vercel.app/api/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
     });
     if (!res.ok) throw new Error("Failed to get AI response");
     const data = await res.json();
-
-    if (data.audio) {
-      const audio = new Audio("data:audio/mp3;base64," + data.audio);
-      audio.play().catch(err => console.error("Audio play failed:", err));
-    }
-
-    return data.query_response || "Sorry, Rahul Sir has no answer right now.";
+    return data;
   } catch (err) {
     console.error("AI backend error:", err);
-    return "Sorry, Rahul Sir is not available right now.";
+    return { query_response: "Sorry, Rahul Sir is not available right now." };
   }
 }
 
@@ -172,7 +162,6 @@ export default function Scene() {
   const [input, setInput] = useState("");
   const [answer, setAnswer] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-  const [hasAsked, setHasAsked] = useState(false);
   const [aiAnswered, setAiAnswered] = useState(false);
 
   const handleAsk = async () => {
@@ -181,11 +170,30 @@ export default function Scene() {
     setInput("");
     setAnswer("Thinking...");
     setIsThinking(true);
-    setHasAsked(true);
     setAiAnswered(false);
 
-    const aiAnswer = await askRahulBackend(userQuestion);
-    setAnswer(aiAnswer);
+    // Fetch AI response
+    const data = await askRahulBackend(userQuestion);
+
+    // Update text answer
+    setAnswer(data.query_response || "Sorry, no answer.");
+
+    // Play audio **inside user click context** to avoid autoplay block
+    if (data.audio) {
+      try {
+        console.log("Received audio, creating Audio object...");
+        const audio = new Audio("data:audio/mp3;base64," + data.audio);
+        audio.oncanplaythrough = () => console.log("Audio ready to play");
+        audio.onplay = () => console.log("Audio started playing!");
+        audio.onerror = (e) => console.error("Audio error:", e);
+        await audio.play();
+      } catch (err) {
+        console.error("Audio play failed:", err);
+      }
+    } else {
+      console.warn("No audio returned from backend");
+    }
+
     setIsThinking(false);
     setAiAnswered(true);
   };

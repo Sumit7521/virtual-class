@@ -25,10 +25,7 @@ You are knowledgeable, funny, and sometimes sprinkle Bhojpuri or Hinglish phrase
 
 RULES:
 1. Detect the language of the question (English, Hindi, Hinglish, Bengali, Bhojpuri, Maithili, etc.).
-2. Reply in the **same language as the question**, but always using English letters:
-   - Hindi/Bhojpuri → Hinglish
-   - Bengali → transliterated in English letters
-   - English → normal English
+2. Reply in the **same language as the question**, but always using English letters.
 3. For Python technical answers, mix English + Hinglish (if question is in Hindi/Bhojpuri) for clarity.
 4. For motivational/support questions, sprinkle funny Hinglish phrases.
 5. Be witty and slightly humorous when explaining Python concepts; use relatable examples.
@@ -59,6 +56,7 @@ async function generateGemini25Pro(prompt) {
 async function ttsElevenLabs(text) {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   const voiceId = process.env.ELEVENLABS_VOICE_ID;
+
   if (!apiKey || !voiceId) {
     console.warn('TTS disabled: ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID missing.');
     return null;
@@ -68,10 +66,10 @@ async function ttsElevenLabs(text) {
   const outputFormat = process.env.ELEVENLABS_OUTPUT_FORMAT || 'mp3_44100_128';
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(outputFormat)}`;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
-
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
@@ -96,9 +94,9 @@ async function ttsElevenLabs(text) {
     }
 
     const arrayBuffer = await resp.arrayBuffer();
+    console.log('TTS generated successfully, bytes:', arrayBuffer.byteLength);
     return toBase64(arrayBuffer);
   } catch (e) {
-    clearTimeout(timeout);
     console.error('TTS generation failed:', e);
     return null;
   }
@@ -110,14 +108,19 @@ router.post('/ask', async (req, res) => {
   if (!question) return res.status(400).json({ error: 'Question is required' });
 
   try {
+    console.log('Received question:', question);
+
     // 1) Gemini 2.5 Pro response
     const rawText = await generateGemini25Pro(getRahulPrompt(question));
+    console.log('Raw Gemini response:', rawText);
+
     const cleanText = rawText.replace(/```json|```/g, '').trim();
 
     let aiResponse;
     try {
       aiResponse = JSON.parse(cleanText);
-    } catch {
+    } catch (err) {
+      console.warn('Failed to parse Gemini JSON, using fallback:', err);
       aiResponse = {
         query_response: trimToLength(cleanText) || "I'm here to help with Python programming!",
         follow_up_questions: [
@@ -142,9 +145,11 @@ router.post('/ask', async (req, res) => {
 
     // 2) ElevenLabs TTS
     const audioBase64 = await ttsElevenLabs(aiResponse.query_response);
+    if (!audioBase64) console.warn('No audio generated for this response.');
 
     // 3) Send response
     res.json({ ...aiResponse, audio: audioBase64 });
+
   } catch (error) {
     console.error('Error generating content:', error);
     res.status(500).json({
