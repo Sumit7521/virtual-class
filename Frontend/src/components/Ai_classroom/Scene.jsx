@@ -11,12 +11,10 @@ const CAMERA_ZOOMS = { default: 1 };
 // ---------------- Camera Manager ---------------- //
 const CameraManager = () => {
   const controls = useRef();
-
   useEffect(() => {
     controls.current?.setPosition(...CAMERA_POSITIONS.default, true);
     controls.current?.zoomTo(CAMERA_ZOOMS.default, true);
   }, []);
-
   return (
     <CameraControls
       ref={controls}
@@ -31,16 +29,65 @@ const CameraManager = () => {
 };
 
 // ---------------- Rahul Sir Model ---------------- //
-function RahulSir() {
+function RahulSir({ isThinking, aiAnswered }) {
   const { scene, animations } = useGLTF("/models/rahulsir.glb");
   const { actions } = useAnimations(animations, scene);
+  const [currentAction, setCurrentAction] = useState(null);
+  const [enterAnimationPlayed, setEnterAnimationPlayed] = useState(false);
 
   useEffect(() => {
-    if (actions && Object.keys(actions).length > 0) {
-      const firstAction = actions[Object.keys(actions)[0]];
-      firstAction.reset().play();
+    if (!actions || Object.keys(actions).length === 0) return;
+
+    // Console all animations
+    console.log("Rahul Sir animations:");
+    Object.keys(actions).forEach((key, idx) => console.log(idx, key));
+
+    // Play enter animation once
+    if (!enterAnimationPlayed) {
+      const enterAction = actions[Object.keys(actions)[6]]; // waving
+      enterAction.reset().setLoop(THREE.LoopOnce).play();
+      enterAction.clampWhenFinished = true;
+      setCurrentAction(enterAction);
+      setEnterAnimationPlayed(true);
+
+      enterAction.getMixer().addEventListener("finished", () => {
+        const idleAction = actions[Object.keys(actions)[4]]; // idle2
+        idleAction.reset().play();
+        setCurrentAction(idleAction);
+      });
     }
-  }, [actions]);
+  }, [actions, enterAnimationPlayed]);
+
+  // Handle thinking animation
+  useEffect(() => {
+    if (!actions || !currentAction) return;
+    if (isThinking) {
+      const thinkAction = actions[Object.keys(actions)[4]]; // idle2 / waiting
+      if (currentAction !== thinkAction) {
+        currentAction.fadeOut(0.2);
+        thinkAction.reset().fadeIn(0.2).play();
+        setCurrentAction(thinkAction);
+      }
+    }
+  }, [isThinking, actions, currentAction]);
+
+  // Handle answer animation once after AI responds
+  useEffect(() => {
+    if (!actions || !currentAction || !aiAnswered) return;
+
+    const answerAction = actions[Object.keys(actions)[5]]; // Talking
+    answerAction.reset().setLoop(THREE.LoopOnce).play();
+    answerAction.clampWhenFinished = true;
+
+    currentAction.fadeOut(0.2);
+    setCurrentAction(answerAction);
+
+    answerAction.getMixer().addEventListener("finished", () => {
+      const idleAction = actions[Object.keys(actions)[4]]; // idle2
+      idleAction.reset().fadeIn(0.2).play();
+      setCurrentAction(idleAction);
+    });
+  }, [aiAnswered, actions]);
 
   return <primitive object={scene} position={[-2, -1.7, -5]} scale={1.3} />;
 }
@@ -55,7 +102,6 @@ function BlackboardPlaceholder({ text }) {
     canvas.width = 512;
     canvas.height = 256;
     const ctx = canvas.getContext("2d");
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.fillStyle = "#ffffff";
@@ -98,7 +144,7 @@ function BlackboardPlaceholder({ text }) {
   );
 }
 
-// ---------------- Backend AI Call with TTS ---------------- //
+// ---------------- Backend AI Call ---------------- //
 async function askRahulBackend(question) {
   try {
     const res = await fetch("http://localhost:3000/api/ask", {
@@ -125,14 +171,23 @@ async function askRahulBackend(question) {
 export default function Scene() {
   const [input, setInput] = useState("");
   const [answer, setAnswer] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [hasAsked, setHasAsked] = useState(false);
+  const [aiAnswered, setAiAnswered] = useState(false);
 
   const handleAsk = async () => {
     if (!input.trim()) return;
     const userQuestion = input;
     setInput("");
     setAnswer("Thinking...");
+    setIsThinking(true);
+    setHasAsked(true);
+    setAiAnswered(false);
+
     const aiAnswer = await askRahulBackend(userQuestion);
     setAnswer(aiAnswer);
+    setIsThinking(false);
+    setAiAnswered(true);
   };
 
   return (
@@ -144,7 +199,7 @@ export default function Scene() {
         <directionalLight position={[5, 5, 5]} intensity={1} castShadow />
         <Suspense fallback={null}>
           <Gltf src="/models/Ai_classroom.glb" position={[0, -1.7, -2]} scale={1} />
-          <RahulSir />
+          <RahulSir isThinking={isThinking} aiAnswered={aiAnswered} />
           <BlackboardPlaceholder text={answer} />
           <Environment preset="sunset" />
         </Suspense>
@@ -153,7 +208,7 @@ export default function Scene() {
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-2xl">
         <div className="bg-white/20 backdrop-blur-xl border border-white/30 rounded-2xl shadow-lg p-4 space-y-2">
           <h2 className="text-white text-lg font-semibold text-left">
-             Ask Rahul Sir a Python Question 💬
+            Ask Rahul Sir a Python Question 💬
           </h2>
           <div className="flex items-center space-x-2 mt-2">
             <input
