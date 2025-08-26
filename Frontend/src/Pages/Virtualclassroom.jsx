@@ -52,6 +52,8 @@ const Virtualclassroom = () => {
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [chatMessages, setChatMessages] = useState([]);
   const [participants, setParticipants] = useState([]);
+  const [isMuted, setIsMuted] = useState(false);
+  const [cameraOn, setCameraOn] = useState(true);
   
   const peersRef = useRef({});
   const reconnectTimeoutRef = useRef(null);
@@ -439,6 +441,139 @@ const Virtualclassroom = () => {
     }
   };
 
+  const handleMuteToggle = (muted) => {
+    if (localStream) {
+      const audioTracks = localStream.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = !muted;
+      });
+      setIsMuted(muted);
+      
+      // Notify peers about the mute state change
+      if (socket && socket.connected) {
+        socket.emit('mute-state', { muted });
+      }
+    }
+  };
+
+  const handleCameraToggle = (cameraOn) => {
+    if (localStream) {
+      const videoTracks = localStream.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.enabled = cameraOn;
+      });
+      setCameraOn(cameraOn);
+      
+      // Notify peers about the camera state change
+      if (socket && socket.connected) {
+        socket.emit('camera-state', { cameraOn });
+      }
+    }
+  };
+
+  const handleScreenShare = async () => {
+    try {
+      // Check if screen sharing is already active
+      if (localStream && localStream.getVideoTracks()[0]?.label.includes('screen')) {
+        // Stop screen share and switch back to camera
+        localStream.getTracks().forEach(track => track.stop());
+        
+        // Get camera stream
+        const cameraStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1280, max: 1920 }, 
+            height: { ideal: 720, max: 1080 },
+            facingMode: 'user'
+          }, 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        setLocalStream(cameraStream);
+        
+        // Update all peer connections with new stream
+        Object.entries(peersRef.current).forEach(([userId, peerConnection]) => {
+          if (peerConnection) {
+            // Remove old video tracks
+            const sender = peerConnection.getSenders().find(s => 
+              s.track && s.track.kind === 'video'
+            );
+            if (sender) {
+              peerConnection.removeTrack(sender);
+            }
+            
+            // Add new video track
+            const videoTrack = cameraStream.getVideoTracks()[0];
+            if (videoTrack) {
+              peerConnection.addTrack(videoTrack, cameraStream);
+            }
+          }
+        });
+        
+        console.log('Switched back to camera');
+        return;
+      }
+      
+      // Start screen sharing
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: "always",
+          displaySurface: "window"
+        },
+        audio: false
+      });
+      
+      // Get audio from current stream if available
+      let audioTrack = null;
+      if (localStream) {
+        audioTrack = localStream.getAudioTracks()[0];
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      // Create new stream with screen video and existing audio
+      const newStream = new MediaStream();
+      screenStream.getVideoTracks().forEach(track => newStream.addTrack(track));
+      if (audioTrack) {
+        newStream.addTrack(audioTrack);
+      }
+      
+      setLocalStream(newStream);
+      
+      // Update all peer connections with new stream
+      Object.entries(peersRef.current).forEach(([userId, peerConnection]) => {
+        if (peerConnection) {
+          // Remove old video tracks
+          const sender = peerConnection.getSenders().find(s => 
+            s.track && s.track.kind === 'video'
+          );
+          if (sender) {
+            peerConnection.removeTrack(sender);
+          }
+          
+          // Add new video track
+          const videoTrack = newStream.getVideoTracks()[0];
+          if (videoTrack) {
+            peerConnection.addTrack(videoTrack, newStream);
+          }
+        }
+      });
+      
+      // Handle screen share ending
+      screenStream.getVideoTracks()[0].onended = () => {
+        handleScreenShare(); // This will switch back to camera
+      };
+      
+      console.log('Screen sharing started');
+      
+    } catch (error) {
+      console.error('Error with screen sharing:', error);
+      alert('Failed to start screen sharing. Please check your browser permissions.');
+    }
+  };
+
   const leaveMeeting = () => {
     if (socket && socket.connected) {
       socket.emit('leave-room');
@@ -463,6 +598,8 @@ const Virtualclassroom = () => {
     setMeetingIdInput('');
     setRoomId('');
     setIsHost(false);
+    setIsMuted(false);
+    setCameraOn(true);
     console.log('Left the meeting and cleared resources.');
   };
 
@@ -619,6 +756,9 @@ const Virtualclassroom = () => {
         chatMessages={chatMessages}
         onSendMessage={sendMessage}
         onLeaveMeeting={leaveMeeting}
+        onMute={handleMuteToggle}
+        onCamera={handleCameraToggle}
+        onScreenShare={handleScreenShare}
         localStream={localStream}
         username={username}
         roomId={roomId}

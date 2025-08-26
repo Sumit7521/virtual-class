@@ -31,6 +31,9 @@ const Scene = ({
   chatMessages = [], 
   onSendMessage, 
   onLeaveMeeting, 
+  onMute,
+  onCamera,
+  onScreenShare,
   localStream, 
   username, 
   roomId 
@@ -44,7 +47,12 @@ const Scene = ({
 
       <CameraController />
       <Classroom />
-      <Blackboard />
+<Blackboard 
+  onLeave={onLeaveMeeting} 
+  onMute={onMute} 
+  onCamera={onCamera} 
+  onScreenShare={onScreenShare}
+/>
       <RightBoard 
         chatMessages={chatMessages}
         onSendMessage={onSendMessage}
