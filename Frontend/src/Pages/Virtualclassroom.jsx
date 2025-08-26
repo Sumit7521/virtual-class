@@ -5,12 +5,7 @@ import Scene from '../components/Virtual_Classroom/Scene';
 
 // Backend URL - properly handle environment variables for deployment
 const BACKEND_URL = (() => {
-  // For Create React App (production deployment)
-  if (process.env.REACT_APP_BACKEND_URL) {
-    return process.env.REACT_APP_BACKEND_URL;
-  }
-  
-  // For Vite (if you switch to Vite later)
+  // For Vite (current setup)
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
@@ -20,8 +15,13 @@ const BACKEND_URL = (() => {
     return window.env.REACT_APP_BACKEND_URL;
   }
   
+  // For Create React App (if needed)
+  if (typeof process !== 'undefined' && process.env?.REACT_APP_BACKEND_URL) {
+    return process.env.REACT_APP_BACKEND_URL;
+  }
+  
   // Production fallback
-  if (process.env.NODE_ENV === 'production') {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'production') {
     return 'https://immersio.onrender.com';
   }
   
@@ -29,7 +29,15 @@ const BACKEND_URL = (() => {
   return 'http://localhost:3000';
 })();
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || BACKEND_URL;
+const SOCKET_URL = (() => {
+  // For Vite
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL) {
+    return import.meta.env.VITE_SOCKET_URL;
+  }
+  
+  // Fallback to BACKEND_URL
+  return BACKEND_URL;
+})();
 
 const Virtualclassroom = () => {
   const [socket, setSocket] = useState(null);
@@ -53,7 +61,7 @@ const Virtualclassroom = () => {
   // Initialize socket connection with better error handling and reconnection
   useEffect(() => {
     console.log('Connecting to backend:', SOCKET_URL);
-    console.log('Environment:', process.env.NODE_ENV);
+    console.log('Environment:', typeof import.meta !== 'undefined' ? import.meta.env.MODE : 'production');
     
     const initializeSocket = () => {
       const newSocket = io(SOCKET_URL, {
@@ -505,7 +513,7 @@ const Virtualclassroom = () => {
             </div>
             
             {/* Environment info in development */}
-            {process.env.NODE_ENV === 'development' && (
+            {(typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'development') && (
               <div className="text-xs text-slate-500 mb-4">
                 <div>Backend: {BACKEND_URL}</div>
                 <div>Socket: {SOCKET_URL}</div>

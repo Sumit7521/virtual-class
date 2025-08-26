@@ -8,8 +8,8 @@ const BACKEND_URL = (() => {
     return import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
   }
   
-  // For Create React App
-  if (typeof window !== 'undefined' && window.env) {
+  // For Create React App (if needed)
+  if (typeof window !== 'undefined' && window.env?.REACT_APP_BACKEND_URL) {
     return window.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
   }
   
