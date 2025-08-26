@@ -1,8 +1,10 @@
 // RightBoard.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Html } from '@react-three/drei';
+import { useVirtualClassroom } from '../../contexts/VirtualClassroomContext';
 
-const RightBoard = ({ chatMessages = [], onSendMessage, username = "You" }) => {
+const RightBoard = () => {
+  const { chatMessages, sendMessage, username } = useVirtualClassroom();
   const [newMessage, setNewMessage] = useState("");
   const chatContainerRef = useRef(null);
 
@@ -17,8 +19,8 @@ const RightBoard = ({ chatMessages = [], onSendMessage, username = "You" }) => {
   }, [chatMessages]);
 
   const handleSend = () => {
-    if (!newMessage.trim() || !onSendMessage) return;
-    onSendMessage(newMessage.trim());
+    if (!newMessage.trim() || !sendMessage) return;
+    sendMessage(newMessage.trim());
     setNewMessage("");
   };
 

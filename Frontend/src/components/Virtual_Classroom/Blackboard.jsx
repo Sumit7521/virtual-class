@@ -1,12 +1,27 @@
+// Blackboard.jsx
 import { useEffect, useRef, useState } from 'react';
 import { useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useControls } from 'leva';
+import { useVirtualClassroom } from '../../contexts/VirtualClassroomContext';
 
-const Blackboard = ({ onLeave, onMute, onCamera, onScreenShare }) => {
+const Blackboard = () => {
   const { nodes } = useGLTF('/models/Classroom.glb');
   const [videoTexture, setVideoTexture] = useState(null);
   const planeRef = useRef();
+  
+  const {
+    localStream,
+    pinnedStream,
+    pinnedParticipant,
+    leaveMeeting,
+    handleMuteToggle,
+    handleCameraToggle,
+    handleScreenShare,
+    isMuted,
+    cameraOn,
+    isScreenSharing
+  } = useVirtualClassroom();
 
   // Leva-controlled position, scale, and color
   const { posX, posY, posZ, scaleX, scaleY, buttonColor } = useControls('Button Controls', {
@@ -18,17 +33,18 @@ const Blackboard = ({ onLeave, onMute, onCamera, onScreenShare }) => {
     buttonColor: { value: '#22222d' },
   });
 
-  const [isMuted, setIsMuted] = useState(false);
-  const [cameraOn, setCameraOn] = useState(true);
-
+  // Create video texture from the stream to display on blackboard
   useEffect(() => {
     const video = document.createElement('video');
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
 
-    navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-      video.srcObject = stream;
+    // Determine which stream to use - pinned stream takes priority
+    const streamToUse = pinnedStream || localStream;
+    
+    if (streamToUse) {
+      video.srcObject = streamToUse;
       video.play();
 
       const texture = new THREE.VideoTexture(video);
@@ -38,8 +54,15 @@ const Blackboard = ({ onLeave, onMute, onCamera, onScreenShare }) => {
       texture.colorSpace = THREE.SRGBColorSpace;
 
       setVideoTexture(texture);
-    });
-  }, []);
+      
+      // Cleanup function
+      return () => {
+        video.pause();
+        video.srcObject = null;
+        texture.dispose();
+      };
+    }
+  }, [localStream, pinnedStream]);
 
   if (!nodes?.Blackboard || !videoTexture) return null;
 
@@ -57,7 +80,30 @@ const Blackboard = ({ onLeave, onMute, onCamera, onScreenShare }) => {
       scale={[5, 5.07, 1.5]}
     >
       <planeGeometry args={[size.x, size.y]} />
-      <meshBasicMaterial map={videoTexture} toneMapped={false} transparent />
+      <meshBasicMaterial 
+        map={videoTexture} 
+        toneMapped={false} 
+        transparent 
+        // Mirror local video but not pinned video
+        {...(pinnedStream ? {} : { map: videoTexture })}
+      />
+
+      {/* Video title overlay when pinned participant is showing */}
+      {pinnedParticipant && (
+        <Html
+          position={[0, 0.8, 0.1]}
+          transform
+          center
+          distanceFactor={1.5}
+        >
+          <div className="bg-black/70 backdrop-blur-sm px-4 py-2 rounded-lg text-white text-center">
+            <div className="flex items-center gap-2">
+              <span className="text-yellow-400">📌</span>
+              <span className="font-semibold">{pinnedParticipant.name}</span>
+            </div>
+          </div>
+        </Html>
+      )}
 
       <Html
         position={[posX, posY, posZ]}
@@ -69,28 +115,27 @@ const Blackboard = ({ onLeave, onMute, onCamera, onScreenShare }) => {
         <div style={buttonContainerStyle}>
           <IconButton
             iconClass="ri-logout-box-r-line"
-            onClick={onLeave}
+            onClick={leaveMeeting}
             title="Leave Room"
             color={buttonColor}
           />
           <IconButton
-            iconClass={isMuted ? "ri-mic-fill" : "ri-mic-off-fill"}
-            onClick={() => { setIsMuted(!isMuted); onMute(!isMuted); }}
+            iconClass={isMuted ? "ri-mic-off-fill" : "ri-mic-fill"}
+            onClick={() => handleMuteToggle(!isMuted)}
             title={isMuted ? "Unmute" : "Mute"}
-            color={buttonColor}
+            color={isMuted ? '#ef4444' : buttonColor}
           />
           <IconButton
             iconClass={cameraOn ? "ri-video-on-line" : "ri-video-off-line"}
-            onClick={() => { setCameraOn(!cameraOn); onCamera(!cameraOn); }}
+            onClick={() => handleCameraToggle(!cameraOn)}
             title={cameraOn ? "Camera Off" : "Camera On"}
-            color={buttonColor}
+            color={!cameraOn ? '#ef4444' : buttonColor}
           />
-          {/* Screen Share Button */}
           <IconButton
-            iconClass="ri-tv-2-line"
-            onClick={onScreenShare}
-            title="Screen Share"
-            color={buttonColor}
+            iconClass={isScreenSharing ? "ri-stop-circle-line" : "ri-tv-2-line"}
+            onClick={handleScreenShare}
+            title={isScreenSharing ? "Stop Screen Share" : "Screen Share"}
+            color={isScreenSharing ? '#10b981' : buttonColor}
           />
         </div>
       </Html>

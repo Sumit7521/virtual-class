@@ -1,10 +1,20 @@
 // LeftBoard.jsx
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Html } from '@react-three/drei';
 import { useControls } from 'leva';
+import { useVirtualClassroom } from '../../contexts/VirtualClassroomContext';
 
-const LeftBoard = ({ participants = [], localStream }) => {
+const LeftBoard = () => {
+  const {
+    participants,
+    localStream,
+    pinParticipant,
+    unpinParticipant,
+    pinnedParticipant
+  } = useVirtualClassroom();
+  
   const boardContainerRef = useRef(null);
+  const [hoveredParticipant, setHoveredParticipant] = useState(null);
 
   useEffect(() => {
     if (boardContainerRef.current) {
@@ -73,6 +83,19 @@ const LeftBoard = ({ participants = [], localStream }) => {
     }
   };
 
+  const handlePinClick = (participant, e) => {
+    e.stopPropagation();
+    if (participant.id === 'local') {
+      return; // Don't allow pinning local participant
+    }
+    
+    if (pinnedParticipant && pinnedParticipant.id === participant.id) {
+      unpinParticipant();
+    } else {
+      pinParticipant(participant);
+    }
+  };
+
   return (
     <group position={[posX, posY, posZ]} rotation={[0, 0, 0]}>
       <Html
@@ -102,7 +125,14 @@ const LeftBoard = ({ participants = [], localStream }) => {
               participants.map((participant, i) => (
                 <div
                   key={participant.id || i}
-                  className="relative rounded-xl overflow-hidden w-full min-h-[120px] bg-gray-800/90 flex items-center justify-center shadow-md border-2 border-gray-700"
+                  className={`relative rounded-xl overflow-hidden w-full min-h-[120px] bg-gray-800/90 flex items-center justify-center shadow-md border-2 transition-all duration-200 cursor-pointer ${
+                    pinnedParticipant && pinnedParticipant.id === participant.id 
+                      ? 'border-yellow-400 shadow-yellow-400/50' 
+                      : 'border-gray-700 hover:border-gray-500'
+                  }`}
+                  onMouseEnter={() => setHoveredParticipant(participant.id)}
+                  onMouseLeave={() => setHoveredParticipant(null)}
+                  onClick={(e) => handlePinClick(participant, e)}
                 >
                   <VideoElement participant={participant} />
                   
@@ -113,6 +143,9 @@ const LeftBoard = ({ participants = [], localStream }) => {
                       {participant.isLocal && (
                         <span className="ml-1 text-green-400">●</span>
                       )}
+                      {pinnedParticipant && pinnedParticipant.id === participant.id && (
+                        <span className="ml-1 text-yellow-400">📌</span>
+                      )}
                     </div>
                   </div>
 
@@ -122,6 +155,36 @@ const LeftBoard = ({ participants = [], localStream }) => {
                       participant.stream ? 'bg-green-400' : 'bg-red-400'
                     }`}></div>
                   </div>
+
+                  {/* Pin button - only show on hover and for non-local participants */}
+                  {hoveredParticipant === participant.id && !participant.isLocal && (
+                    <div className="absolute top-1 left-1">
+                      <button
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200 ${
+                          pinnedParticipant && pinnedParticipant.id === participant.id
+                            ? 'bg-yellow-500 text-black shadow-lg'
+                            : 'bg-black/70 text-white hover:bg-yellow-500 hover:text-black'
+                        }`}
+                        onClick={(e) => handlePinClick(participant, e)}
+                        title={
+                          pinnedParticipant && pinnedParticipant.id === participant.id
+                            ? 'Unpin from main screen'
+                            : 'Pin to main screen'
+                        }
+                      >
+                        📌
+                      </button>
+                    </div>
+                  )}
+                  
+                  {/* Pinned indicator overlay */}
+                  {pinnedParticipant && pinnedParticipant.id === participant.id && (
+                    <div className="absolute inset-0 bg-yellow-400/10 border-2 border-yellow-400/50 rounded-xl pointer-events-none">
+                      <div className="absolute top-2 right-2 bg-yellow-400 text-black px-2 py-1 rounded-full text-xs font-bold">
+                        PINNED
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))
             )}
