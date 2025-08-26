@@ -8,25 +8,25 @@ import { router as meetRoutes, initSocket } from './routes/meet.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration
+// Parse allowed origins from .env
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [];
+
 const corsOptions = {
-  origin: function (origin, callback) {
+  origin: function(origin, callback) {
+    // Allow server-to-server requests or Postman (no origin)
     if (!origin) return callback(null, true);
 
-    const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-      ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-      : [];
-
+    // Development: allow localhost/127.0.0.1
     if (process.env.NODE_ENV === 'development') {
-      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$/)) {
+      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
         return callback(null, true);
       }
-      return callback(null, true);
     }
 
-    if (ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
+    // Production: check allowed origins
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
 
     callback(new Error('Not allowed by CORS'));
   },
@@ -38,11 +38,11 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// API routes
+// Routes
 app.use('/api', aiRoutes);
 app.use('/api/meet', meetRoutes);
 
-// Serve static files (optional)
+// Static files (optional)
 app.use(express.static('public'));
 
 // Root endpoint
@@ -70,23 +70,15 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Create HTTP server and attach socket.io
+// HTTP server + socket.io
 const server = http.createServer(app);
 initSocket(server);
 
+// Host for local vs production
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 
 server.listen(PORT, HOST, () => {
-  console.log(`\n🚀 Server running on http://${HOST}:${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  if (process.env.ALLOWED_ORIGINS) {
-    console.log(`🔒 Allowed Origins: ${process.env.ALLOWED_ORIGINS}`);
-  }
-
-  console.log(`\n📋 Available Endpoints:`);
-  console.log(`   Health Check: /api/meet/health`);
-  console.log(`   AI Chat:      /api/ask`);
-  console.log(`   Room Check:   /api/meet/check-room/:roomId`);
-  console.log(`\n✅ Server is ready!`);
+  console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+  console.log(`📡 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🔒 Allowed Origins: ${ALLOWED_ORIGINS.join(', ')}`);
 });
