@@ -3,16 +3,33 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import Scene from '../components/Virtual_Classroom/Scene';
 
-// Backend URL - handle environment variables safely
+// Backend URL - properly handle environment variables for deployment
 const BACKEND_URL = (() => {
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    return import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+  // For Create React App (production deployment)
+  if (process.env.REACT_APP_BACKEND_URL) {
+    return process.env.REACT_APP_BACKEND_URL;
   }
-  if (typeof window !== 'undefined' && window.env) {
-    return window.env.REACT_APP_BACKEND_URL || 'http://localhost:3000';
+  
+  // For Vite (if you switch to Vite later)
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
   }
+  
+  // For runtime environment variables (if injected at runtime)
+  if (typeof window !== 'undefined' && window.env?.REACT_APP_BACKEND_URL) {
+    return window.env.REACT_APP_BACKEND_URL;
+  }
+  
+  // Production fallback
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://immersio.onrender.com';
+  }
+  
+  // Development fallback
   return 'http://localhost:3000';
 })();
+
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || BACKEND_URL;
 
 const Virtualclassroom = () => {
   const [socket, setSocket] = useState(null);
@@ -29,38 +46,85 @@ const Virtualclassroom = () => {
   const [participants, setParticipants] = useState([]);
   
   const peersRef = useRef({});
+  const reconnectTimeoutRef = useRef(null);
+  const maxReconnectAttempts = 5;
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
-  // Initialize socket connection
+  // Initialize socket connection with better error handling and reconnection
   useEffect(() => {
-    console.log('Connecting to backend:', BACKEND_URL);
-    const newSocket = io(BACKEND_URL, {
-      transports: ['websocket', 'polling'],
-      timeout: 20000,
-      forceNew: true,
-      autoConnect: true
-    });
+    console.log('Connecting to backend:', SOCKET_URL);
+    console.log('Environment:', process.env.NODE_ENV);
+    
+    const initializeSocket = () => {
+      const newSocket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        timeout: 30000,
+        forceNew: true,
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: maxReconnectAttempts,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        maxReconnectionAttempts: maxReconnectAttempts
+      });
 
-    newSocket.on('connect', () => {
-      console.log('Successfully connected to backend server');
-      setConnectionStatus('connected');
-    });
+      newSocket.on('connect', () => {
+        console.log('Successfully connected to backend server');
+        setConnectionStatus('connected');
+        setReconnectAttempts(0);
+      });
 
-    newSocket.on('connect_error', (error) => {
-      console.error('Connection error:', error);
-      setConnectionStatus('error');
-    });
+      newSocket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+        setConnectionStatus('error');
+        
+        // Try to reconnect with exponential backoff
+        if (reconnectAttempts < maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+          console.log(`Retrying connection in ${delay}ms... (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            setReconnectAttempts(prev => prev + 1);
+            newSocket.connect();
+          }, delay);
+        }
+      });
 
-    newSocket.on('disconnect', (reason) => {
-      console.log('Disconnected from server:', reason);
-      setConnectionStatus('disconnected');
-    });
+      newSocket.on('disconnect', (reason) => {
+        console.log('Disconnected from server:', reason);
+        setConnectionStatus('disconnected');
+      });
 
-    setSocket(newSocket);
+      newSocket.on('reconnect', (attemptNumber) => {
+        console.log('Reconnected after', attemptNumber, 'attempts');
+        setConnectionStatus('connected');
+        setReconnectAttempts(0);
+      });
+
+      newSocket.on('reconnect_error', (error) => {
+        console.error('Reconnection failed:', error);
+        setConnectionStatus('error');
+      });
+
+      newSocket.on('reconnect_failed', () => {
+        console.error('Failed to reconnect after maximum attempts');
+        setConnectionStatus('error');
+      });
+
+      setSocket(newSocket);
+
+      return newSocket;
+    };
+
+    const socketInstance = initializeSocket();
 
     return () => {
-      newSocket.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      socketInstance.close();
     };
-  }, []);
+  }, [reconnectAttempts]);
 
   // Socket event listeners
   useEffect(() => {
@@ -128,16 +192,23 @@ const Virtualclassroom = () => {
       setChatMessages(prev => [...prev, { username, message, isOwn: false }]);
     };
 
+    const handleRoomError = (error) => {
+      console.error('Room error:', error);
+      alert(`Room error: ${error.message || 'Unknown error occurred'}`);
+    };
+
     socket.on('user-connected', handleUserConnected);
     socket.on('signal', handleSignal);
     socket.on('user-disconnected', handleUserDisconnected);
     socket.on('chat', handleChatReceived);
+    socket.on('room-error', handleRoomError);
 
     return () => {
       socket.off('user-connected');
       socket.off('signal');
       socket.off('user-disconnected');
       socket.off('chat');
+      socket.off('room-error');
     };
   }, [socket, localStream]);
 
@@ -146,7 +217,10 @@ const Virtualclassroom = () => {
     const peerConnection = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ],
     });
 
@@ -170,6 +244,14 @@ const Virtualclassroom = () => {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('signal', { target: userId, signal: event.candidate });
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log(`Peer connection state for ${userId}:`, peerConnection.connectionState);
+      if (peerConnection.connectionState === 'failed') {
+        console.log('Peer connection failed, attempting to reconnect...');
+        // Handle peer connection failure
       }
     };
 
@@ -214,19 +296,61 @@ const Virtualclassroom = () => {
 
     try {
       console.log('Starting meeting with room ID:', idToUse);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720 }, 
-        audio: true 
-      });
+      
+      // Request media with fallback options for mobile compatibility
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1280, max: 1920 }, 
+            height: { ideal: 720, max: 1080 },
+            facingMode: 'user'
+          }, 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+      } catch (highQualityError) {
+        console.log('High quality video failed, trying lower quality:', highQualityError);
+        // Fallback to lower quality
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 640, max: 1280 }, 
+            height: { ideal: 480, max: 720 } 
+          }, 
+          audio: true 
+        });
+      }
+      
       setLocalStream(stream);
 
-      socket.emit('join-room', idToUse);
-      setShowMeetingEntry(false);
-      console.log('Joined room:', idToUse);
-      return true;
+      if (socket && socket.connected) {
+        socket.emit('join-room', idToUse);
+        setShowMeetingEntry(false);
+        console.log('Joined room:', idToUse);
+        return true;
+      } else {
+        throw new Error('Socket not connected');
+      }
     } catch (error) {
       console.error('Error accessing media devices:', error);
-      alert('Error accessing camera/microphone. Please ensure permissions are granted.');
+      let errorMessage = 'Error accessing camera/microphone. ';
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage += 'Please allow camera and microphone permissions and try again.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage += 'No camera or microphone found.';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage += 'Camera or microphone is already in use.';
+      } else if (error.message === 'Socket not connected') {
+        errorMessage = 'Not connected to server. Please check your internet connection.';
+      } else {
+        errorMessage += 'Please check your device settings and try again.';
+      }
+      
+      alert(errorMessage);
       return false;
     }
   };
@@ -252,13 +376,17 @@ const Virtualclassroom = () => {
     }
 
     try {
-      console.log(`Checking room existence at: ${BACKEND_URL}/api/meet/check-room/${trimmedId}`);
-      const response = await fetch(`${BACKEND_URL}/api/meet/check-room/${trimmedId}`, {
+      const checkUrl = `${BACKEND_URL}/api/meet/check-room/${trimmedId}`;
+      console.log(`Checking room existence at: ${checkUrl}`);
+      
+      const response = await fetch(checkUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include'
+        credentials: 'include',
+        // Add timeout for production
+        signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined
       });
       
       if (!response.ok) {
@@ -284,8 +412,10 @@ const Virtualclassroom = () => {
     } catch (error) {
       console.error('Error checking room existence:', error);
       
-      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        alert(`Cannot connect to the server at ${BACKEND_URL}. Please check if the backend server is running.`);
+      if (error.name === 'AbortError') {
+        alert('Request timed out. Please check your internet connection and try again.');
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('CORS')) {
+        alert(`Cannot connect to the server. Please check your internet connection and try again.`);
       } else {
         alert(`Error: ${error.message}. Please try again.`);
       }
@@ -293,14 +423,16 @@ const Virtualclassroom = () => {
   };
 
   const sendMessage = (message) => {
-    if (message.trim() !== '' && socket) {
+    if (message.trim() !== '' && socket && socket.connected) {
       setChatMessages(prev => [...prev, { username: 'You', message: message, isOwn: true }]);
       socket.emit('chat', { message: message, username });
+    } else if (!socket || !socket.connected) {
+      alert('Not connected to server. Please check your connection.');
     }
   };
 
   const leaveMeeting = () => {
-    if (socket) {
+    if (socket && socket.connected) {
       socket.emit('leave-room');
     }
     
@@ -309,7 +441,9 @@ const Virtualclassroom = () => {
     }
     
     Object.values(peersRef.current).forEach(peer => {
-      peer.close();
+      if (peer && peer.close) {
+        peer.close();
+      }
     });
     
     setLocalStream(null);
@@ -320,6 +454,7 @@ const Virtualclassroom = () => {
     setShowMeetingEntry(true);
     setMeetingIdInput('');
     setRoomId('');
+    setIsHost(false);
     console.log('Left the meeting and cleared resources.');
   };
 
@@ -341,11 +476,21 @@ const Virtualclassroom = () => {
     }
   };
 
+  const getStatusText = () => {
+    switch(connectionStatus) {
+      case 'connected': return 'Connected';
+      case 'connecting': return 'Connecting...';
+      case 'error': return reconnectAttempts > 0 ? `Retrying... (${reconnectAttempts}/${maxReconnectAttempts})` : 'Connection Error';
+      case 'disconnected': return 'Disconnected';
+      default: return 'Unknown';
+    }
+  };
+
   // Username Modal
   if (showUsernameModal) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 flex items-center justify-center">
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
               <span className="text-2xl font-bold text-white">VC</span>
@@ -356,8 +501,16 @@ const Virtualclassroom = () => {
             {/* Connection Status */}
             <div className="flex items-center justify-center gap-2 text-sm text-slate-400 mb-4">
               <div className={`w-2 h-2 rounded-full ${getStatusColor()}`}></div>
-              <span>Server: {connectionStatus}</span>
+              <span>Server: {getStatusText()}</span>
             </div>
+            
+            {/* Environment info in development */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="text-xs text-slate-500 mb-4">
+                <div>Backend: {BACKEND_URL}</div>
+                <div>Socket: {SOCKET_URL}</div>
+              </div>
+            )}
           </div>
           <div className="space-y-4">
             <input
@@ -367,13 +520,14 @@ const Virtualclassroom = () => {
               placeholder="Your name"
               className="w-full bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               onKeyPress={(e) => e.key === 'Enter' && submitUsername()}
+              maxLength={50}
             />
             <button
               onClick={submitUsername}
-              disabled={connectionStatus !== 'connected'}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg"
+              disabled={connectionStatus !== 'connected' || !username.trim()}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg disabled:transform-none"
             >
-              {connectionStatus === 'connected' ? 'Continue' : 'Connecting...'}
+              {connectionStatus === 'connected' ? 'Continue' : getStatusText()}
             </button>
           </div>
         </div>
@@ -385,7 +539,7 @@ const Virtualclassroom = () => {
   if (showMeetingEntry) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 flex items-center justify-center">
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Welcome, {username}!</h2>
             <p className="text-slate-400 mb-6">Start or join a virtual classroom meeting.</p>
@@ -393,7 +547,7 @@ const Virtualclassroom = () => {
             {/* Connection Status */}
             <div className="flex items-center justify-center gap-2 text-sm text-slate-400 mb-4">
               <div className={`w-2 h-2 rounded-full ${getStatusColor()}`}></div>
-              <span>Server: {connectionStatus}</span>
+              <span>Server: {getStatusText()}</span>
             </div>
           </div>
           <div className="space-y-6">
@@ -401,7 +555,7 @@ const Virtualclassroom = () => {
               <button
                 onClick={createMeeting}
                 disabled={connectionStatus !== 'connected'}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-lg"
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-lg disabled:transform-none"
               >
                 <svg className="h-5 w-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -419,11 +573,12 @@ const Virtualclassroom = () => {
                 placeholder="Enter Meeting ID to Join"
                 className="bg-white/5 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                 onKeyPress={(e) => e.key === 'Enter' && joinMeeting()}
+                maxLength={20}
               />
               <button
                 onClick={joinMeeting}
-                disabled={connectionStatus !== 'connected'}
-                className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-lg"
+                disabled={connectionStatus !== 'connected' || !meetingIdInput.trim()}
+                className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-lg disabled:transform-none"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <polygon points="23 7 16 12 23 17 23 7"></polygon>
@@ -435,7 +590,7 @@ const Virtualclassroom = () => {
             {isHost && roomId && (
               <div className="text-center bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
                 <p className="text-slate-400 text-sm mb-2">Meeting ID:</p>
-                <p className="text-slate-100 font-mono text-lg bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent font-bold mb-4">{roomId}</p>
+                <p className="text-slate-100 font-mono text-lg bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent font-bold mb-4 break-all">{roomId}</p>
                 <div className="flex items-center justify-center gap-2 text-green-400">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                   <span className="text-sm">Meeting ready</span>

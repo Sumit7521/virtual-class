@@ -7,6 +7,7 @@ import { router as meetRoutes, initSocket } from './routes/meet.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0'; // Always bind to all interfaces on cloud hosts
 
 // Parse allowed origins from .env
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
@@ -14,13 +15,13 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   : [];
 
 const corsOptions = {
-  origin: function(origin, callback) {
+  origin: (origin, callback) => {
     // Allow server-to-server requests or Postman (no origin)
     if (!origin) return callback(null, true);
 
     // Development: allow localhost/127.0.0.1
     if (process.env.NODE_ENV === 'development') {
-      if (origin.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
     }
@@ -28,6 +29,7 @@ const corsOptions = {
     // Production: check allowed origins
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
 
+    console.warn(`Blocked CORS request from: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -42,7 +44,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api', aiRoutes);
 app.use('/api/meet', meetRoutes);
 
-// Static files (optional)
+// Serve static files
 app.use(express.static('public'));
 
 // Root endpoint
@@ -66,19 +68,15 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
-});
+app.use('*', (req, res) => res.status(404).json({ error: 'Endpoint not found' }));
 
-// HTTP server + socket.io
+// HTTP server + Socket.IO
 const server = http.createServer(app);
 initSocket(server);
 
-// Host for local vs production
-const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
-
+// Start server
 server.listen(PORT, HOST, () => {
-  console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+  console.log(`\n🚀 Server running on http://${HOST}:${PORT}`);
   console.log(`📡 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🔒 Allowed Origins: ${ALLOWED_ORIGINS.join(', ')}`);
+  console.log(`🔒 Allowed Origins: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : 'None'}`);
 });
