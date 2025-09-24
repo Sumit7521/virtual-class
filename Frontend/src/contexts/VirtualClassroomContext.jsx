@@ -4,20 +4,25 @@ import { io } from 'socket.io-client';
 
 // Backend URL configuration
 const BACKEND_URL = (() => {
+  // Vite environment variable
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
+
+  // CRA or window injected variable
   if (typeof window !== 'undefined' && window.env?.REACT_APP_BACKEND_URL) {
     return window.env.REACT_APP_BACKEND_URL;
   }
-  if (typeof process !== 'undefined' && process.env?.REACT_APP_BACKEND_URL) {
-    return process.env.REACT_APP_BACKEND_URL;
-  }
+
+  // Production fallback for Vite
   if (typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'production') {
     return 'https://immersio.onrender.com';
   }
+
+  // Default local development
   return 'http://localhost:3000';
 })();
+
 
 const SOCKET_URL = (() => {
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL) {

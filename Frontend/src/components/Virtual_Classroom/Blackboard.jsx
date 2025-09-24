@@ -2,14 +2,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGLTF, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useControls } from 'leva';
 import { useVirtualClassroom } from '../../contexts/VirtualClassroomContext';
 
 const Blackboard = () => {
   const { nodes } = useGLTF('/models/Classroom.glb');
   const [videoTexture, setVideoTexture] = useState(null);
   const planeRef = useRef();
-  
+
   const {
     localStream,
     pinnedStream,
@@ -23,15 +22,13 @@ const Blackboard = () => {
     isScreenSharing
   } = useVirtualClassroom();
 
-  // Leva-controlled position, scale, and color
-  const { posX, posY, posZ, scaleX, scaleY, buttonColor } = useControls('Button Controls', {
-    posX: { value: 0, min: -2, max: 2, step: 0.01 },
-    posY: { value: -1, min: -1, max: 1, step: 0.01 },
-    posZ: { value: 0.05, min: 0, max: 0.5, step: 0.01 },
-    scaleX: { value: 1.3, min: 0.5, max: 2, step: 0.01 },
-    scaleY: { value: 1, min: 0.5, max: 2, step: 0.01 },
-    buttonColor: { value: '#22222d' },
-  });
+  // Fixed position, scale, and button color (replacing Leva)
+  const posX = 0;
+  const posY = -1;
+  const posZ = 0.05;
+  const scaleX = 1.3;
+  const scaleY = 1;
+  const buttonColor = '#22222d';
 
   // Create video texture from the stream to display on blackboard
   useEffect(() => {
@@ -40,9 +37,8 @@ const Blackboard = () => {
     video.muted = true;
     video.playsInline = true;
 
-    // Determine which stream to use - pinned stream takes priority
     const streamToUse = pinnedStream || localStream;
-    
+
     if (streamToUse) {
       video.srcObject = streamToUse;
       video.play();
@@ -54,8 +50,7 @@ const Blackboard = () => {
       texture.colorSpace = THREE.SRGBColorSpace;
 
       setVideoTexture(texture);
-      
-      // Cleanup function
+
       return () => {
         video.pause();
         video.srcObject = null;
@@ -84,18 +79,12 @@ const Blackboard = () => {
         map={videoTexture} 
         toneMapped={false} 
         transparent 
-        // Mirror local video but not pinned video
         {...(pinnedStream ? {} : { map: videoTexture })}
       />
 
-      {/* Video title overlay when pinned participant is showing */}
+      {/* Pinned participant overlay */}
       {pinnedParticipant && (
-        <Html
-          position={[0, 0.8, 0.1]}
-          transform
-          center
-          distanceFactor={1.5}
-        >
+        <Html position={[0, 0.8, 0.1]} transform center distanceFactor={1.5}>
           <div className="bg-black/70 backdrop-blur-sm px-4 py-2 rounded-lg text-white text-center">
             <div className="flex items-center gap-2">
               <span className="text-yellow-400">📌</span>
@@ -105,13 +94,8 @@ const Blackboard = () => {
         </Html>
       )}
 
-      <Html
-        position={[posX, posY, posZ]}
-        transform
-        center
-        scale={[scaleX, scaleY, 1]}
-        distanceFactor={1.5}
-      >
+      {/* Control buttons */}
+      <Html position={[posX, posY, posZ]} transform center scale={[scaleX, scaleY, 1]} distanceFactor={1.5}>
         <div style={buttonContainerStyle}>
           <IconButton
             iconClass="ri-logout-box-r-line"
