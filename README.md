@@ -1,10 +1,10 @@
-# Immersio - Virtual Campus Platform
+# edu-nex - Virtual Campus Platform
 
 A comprehensive virtual campus platform that combines AI-powered classroom experiences with real-time video conferencing in immersive 3D environments. Built with React, Three.js, Node.js, and WebRTC technologies.
 
 ## 🎯 Project Overview
 
-Immersio is a cutting-edge virtual campus platform that provides:
+edu-nex is a cutting-edge virtual campus platform that provides:
 - **AI Classroom**: Interactive 3D environment with an AI instructor (Rahul Sir) for Python learning
 - **Virtual Classroom**: Real-time video conferencing in a 3D classroom environment
 - **3D Environments**: Multiple immersive virtual spaces for different learning experiences
@@ -26,7 +26,7 @@ Immersio is a cutting-edge virtual campus platform that provides:
 ## 📁 Project Structure
 
 ```
-Immersio/
+edu-nex/
 ├── Backend/                    # Node.js backend server
 │   ├── config/                 # Configuration files
 │   │   └── corsConfig.js       # CORS configuration
@@ -405,4 +405,4 @@ For support and questions, please contact the development team or create an issu
 
 ---
 
-**Immersio** - Bringing education into the virtual realm with cutting-edge technology.
+**edu-nex** - Bringing education into the virtual realm with cutting-edge technology.
